@@ -1,0 +1,4 @@
+selenium>=4.0
+beautifulsoup4
+requests
+webdriver-manager
