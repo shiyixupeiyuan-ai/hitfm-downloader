@@ -13,10 +13,29 @@ from webdriver_manager.chrome import ChromeDriverManager  # 自动管理驱动
 from bs4 import BeautifulSoup
 
 # ================== 配置 ==================
-START_DATE = "2025-11-01"
-END_DATE = "2025-11-30"
-CHANNEL_NAME = "662"  # HITFM
-SAVE_BASE_DIR = "./HITFM_202512"
+DEFAULT_CONFIG = {
+    "START_DATE": "2025-11-01",
+    "END_DATE": "2025-11-30",
+    "CHANNEL_NAME": "662",
+    "SAVE_BASE_DIR": "./HITFM_202512"
+}
+
+CONFIG = DEFAULT_CONFIG.copy()
+config_path = os.path.join(os.path.dirname(__file__), 'config.py')
+if os.path.exists(config_path):
+    try:
+        # 动态执行 config.py
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config_code = compile(f.read(), 'config.py', 'exec')
+            exec(config_code, CONFIG)
+    except Exception as e:
+        print(f"⚠️  加载 config.py 失败: {e}")
+
+# 解包到全局变量（供后续代码使用）
+START_DATE = CONFIG.get("START_DATE", DEFAULT_CONFIG["START_DATE"])
+END_DATE = CONFIG.get("END_DATE", DEFAULT_CONFIG["END_DATE"])
+CHANNEL_NAME = CONFIG.get("CHANNEL_NAME", DEFAULT_CONFIG["CHANNEL_NAME"])
+SAVE_BASE_DIR = CONFIG.get("SAVE_BASE_DIR", DEFAULT_CONFIG["SAVE_BASE_DIR"])        
 # ==========================================
 
 def get_date_range(start, end):
