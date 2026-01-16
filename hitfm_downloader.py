@@ -50,7 +50,9 @@ def safe_filename(name):
 
 def extract_programs_from_rendered_page(soup):
     """
-    从渲染后的页面中提取节目名称和ID（使用 downLiveRecord('url','title')）
+    从渲染后的页面中自动提取节目名称和ID（兼容两种格式）
+    返回：[(title, prog_id, id_type), ...]
+    id_type: 1=16位数字ID（新版），2=32位字符+数字ID（旧版）
     """
     programs = []
     
@@ -67,6 +69,7 @@ def extract_programs_from_rendered_page(soup):
         # === 提取 ID 和标题 ===
         prog_id = None
         title = None
+        id_type = 0  # 0=未识别，1=新版，2=旧版
         
         # 方法：解析 onclick="downLiveRecord('url','title');"
         try:
@@ -88,15 +91,23 @@ def extract_programs_from_rendered_page(soup):
                 url_part = parts[0].lstrip("'")
                 title_part = parts[-1].rstrip("'")
                 
-                import re
-                id_match = re.search(r'/(\d{16,})\.m4a', url_part)
-                if id_match:
-                    prog_id = id_match.group(1)
+                # 先匹配新版（16位以上数字ID）
+                id_match_v1 = re.search(r'/(\d{16,})\.m4a', url_part)
+                if id_match_v1:
+                    prog_id = id_match_v1.group(1)
+                    id_type = 1
+                else:
+                    # 匹配旧版（32位字符+数字ID）
+                    id_match_v2 = re.search(r'/([a-f0-9]{32}_\d+)\.m4a', url_part)
+                    if id_match_v2:
+                        prog_id = id_match_v2.group(1)
+                        id_type = 2
+                
+                # 仅保留识别到ID的节目
+                if prog_id and title_part.strip() and 'undefined' not in title_part:
                     title = title_part.strip()
-                    
-                    if prog_id and title and 'undefined' not in title:
-                        programs.append((title, prog_id))
-                        print(f"  🔍 发现节目: {title} | ID: {prog_id}")
+                    programs.append((title, prog_id, id_type))
+                    print(f"  🔍 发现节目: {title} | ID: {prog_id} | 类型: {'新版' if id_type==1 else '旧版'}")
         except Exception as e:
             print(f"  ⚠️ 解析 onclick 失败: {str(e)}")
             continue
@@ -104,9 +115,9 @@ def extract_programs_from_rendered_page(soup):
     # 去重（按 ID）
     seen = set()
     unique = []
-    for title, pid in programs:
+    for title, pid, id_type in programs:
         if pid not in seen:
-            unique.append((title, pid))
+            unique.append((title, pid, id_type))
             seen.add(pid)
     return unique
 
@@ -117,9 +128,9 @@ def main():
     chrome_options.add_argument("--disable-gpu")
     # chrome_options.add_argument("--headless")  # 调试成功后再启用
 
-    print("🔧 启动浏览器...")
+    print("🔧 启动浏览器（自动识别ID类型）...")
     
-    # ✅ 指定本地 chromedriver 路径
+    # 指定本地 chromedriver 路径
     driver_path = os.path.join(os.path.dirname(__file__), "chromedriver.exe")
     service = Service(executable_path=driver_path)
     
@@ -160,8 +171,18 @@ def main():
             date_folder = os.path.join(SAVE_BASE_DIR, date_str)
             os.makedirs(date_folder, exist_ok=True)
 
-            for title, prog_id in programs:
-                audio_url = f"https://ytrecordbroadcast.radio.cn/echo/2/{prog_id}.m4a?e=0&ps=1&r=3"
+            for title, prog_id, id_type in programs:
+                # 根据自动识别的ID类型匹配下载链接
+                if id_type == 1:
+                    # 新版ID下载链接
+                    audio_url = f"https://ytrecordbroadcast.radio.cn/echo/2/{prog_id}.m4a?e=0&ps=1&r=3"
+                elif id_type == 2:
+                    # 旧版ID下载链接
+                    audio_url = f"https://ytcmsplayer.radio.cn/content/video/vod/{formatted_date}/{prog_id}.m4a"
+                else:
+                    print(f"  ❌ 无法识别 {title} 的ID类型，跳过下载")
+                    continue
+
                 filename = safe_filename(title) + ".m4a"
                 filepath = os.path.join(date_folder, filename)
 
@@ -196,7 +217,7 @@ def main():
 
                 time.sleep(0.5)
 
-            # ✅✅✅ 关键：下载完成后删除调试文件 ✅✅✅
+            # 下载完成后删除调试文件
             if os.path.exists(debug_file):
                 os.remove(debug_file)
                 print(f"  🗑️ 已删除调试文件: {debug_file}")
